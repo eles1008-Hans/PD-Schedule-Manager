@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PD Schedule Manager</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <section id="login" class="login" hidden>
+    <form id="loginForm" class="login-card" autocomplete="on">
+      <h1>PD Schedule Manager</h1>
+      <p class="muted">로그인해 주세요.</p>
+      <label>아이디<input id="loginUser" name="username" autocomplete="username" required></label>
+      <label>비밀번호<input id="loginPass" name="password" type="password" autocomplete="current-password" required></label>
+      <p id="loginErr" class="err" role="alert"></p>
+      <button type="submit" class="primary">로그인</button>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <h1>PD Schedule Manager</h1>
+      <input id="search" class="search" type="search" placeholder="피쳐 검색" aria-label="피쳐 검색">
+      <div class="sync" id="syncBox">
+        <button id="syncSwitch" class="switch" role="switch" aria-checked="false" aria-label="구글 시트 동기화">
+          <span class="knob"></span>
+        </button>
+        <span class="sync-label">시트 동기화</span>
+        <span id="syncText" class="sync-text muted"></span>
+        <button id="syncNow" class="ghost" type="button">지금 동기화</button>
+        <button id="conflictBtn" class="badge warn" type="button" hidden></button>
+      </div>
+      <span class="grow"></span>
+      <div class="zoom" aria-label="열 너비">
+        <button id="zoomOut" class="ghost" type="button" aria-label="열 좁게">−</button>
+        <button id="zoomIn" class="ghost" type="button" aria-label="열 넓게">＋</button>
+        <button id="goNow" class="ghost" type="button">이번 달</button>
+      </div>
+      <span id="who" class="who muted"></span>
+      <button id="logout" class="ghost" type="button">로그아웃</button>
+    </header>
+    <main id="boardWrap" class="board-wrap" tabindex="0">
+      <div id="board" class="board"></div>
+    </main>
+  </div>
+
+  <dialog id="editDlg">
+    <form id="editForm">
+      <h2 id="editTitle">피쳐</h2>
+      <label>피쳐 이름<textarea id="editText" rows="3" maxlength="500" required></textarea></label>
+      <div class="row">
+        <label>담당자<select id="editLane"></select></label>
+        <label>월<select id="editMonth"></select></label>
+      </div>
+      <p id="editErr" class="err" role="alert"></p>
+      <div class="actions">
+        <button type="button" id="editDelete" class="danger">삭제</button>
+        <span class="grow"></span>
+        <button type="button" id="editCancel">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="conflictDlg">
+    <h2>시트와 앱 내용이 충돌한 담당자</h2>
+    <p class="muted">같은 담당자 행을 앱과 시트에서 각각 바꿔서 자동으로 합치지 않았어요. 어느 쪽 내용을 남길지 골라 주세요.</p>
+    <ul id="conflictList" class="conflict-list"></ul>
+    <div class="actions"><span class="grow"></span><button type="button" id="conflictClose">닫기</button></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
