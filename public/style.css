@@ -221,6 +221,7 @@ dialog::backdrop { background: rgb(0 0 0 / 0.4); }
 dialog h2 { font-size: 16px; margin-bottom: 10px; }
 dialog form, dialog > * { margin-bottom: 0; }
 dialog label { margin-bottom: 10px; }
+dialog.small { width: min(360px, calc(100vw - 24px)); }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .conflict-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
@@ -235,3 +236,13 @@ dialog label { margin-bottom: 10px; }
   .search, .sync-text, .who { display: none; }
   .topbar { gap: 8px; padding: 0 8px; overflow-x: auto; }
 }
+
+/* 구글 연동 창 */
+#googleDlg { width: min(520px, calc(100vw - 24px)); }
+.g-status { padding: 8px 10px; border-radius: 6px; background: var(--head); margin-bottom: 10px; }
+.g-status.ok { color: #1b7f3b; }
+.g-status.bad { color: var(--danger); }
+.g-setup { margin-bottom: 12px; font-size: 13px; }
+.g-setup summary { cursor: pointer; margin-bottom: 6px; }
+.g-setup ol { padding-left: 20px; display: grid; gap: 6px; }
+.g-setup code { background: var(--head); padding: 1px 5px; border-radius: 4px; word-break: break-all; user-select: all; }

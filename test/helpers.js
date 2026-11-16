@@ -35,7 +35,25 @@ async function startMockSheets(grid, { title = 'Roadmap', gid = 42, colCount = 1
         res.end(JSON.stringify(obj));
       };
       state.calls.push(`${req.method} ${url.pathname}`);
-      if (url.pathname === '/token') return reply({ access_token: 'tkn', expires_in: 3600 });
+      if (url.pathname === '/token') {
+        const p = new URLSearchParams(raw);
+        if (p.get('grant_type') === 'authorization_code') {
+          if (p.get('code') !== 'good-code') return reply({ error: 'invalid_grant', error_description: 'bad code' }, 400);
+          const idPayload = Buffer.from(JSON.stringify({ email: state.email || 'me@gmail.com' })).toString('base64url');
+          return reply({
+            access_token: 'tkn',
+            expires_in: 3600,
+            refresh_token: state.noRefresh ? undefined : 'rtok',
+            scope: state.scope || 'openid email https://www.googleapis.com/auth/spreadsheets',
+            id_token: `x.${idPayload}.y`,
+          });
+        }
+        if (p.get('grant_type') === 'refresh_token' && state.revoked) {
+          return reply({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.' }, 400);
+        }
+        return reply({ access_token: 'tkn', expires_in: 3600 });
+      }
+      if (url.pathname === '/revoke') return reply({});
       if (req.headers.authorization !== 'Bearer tkn') return reply({ error: { message: 'unauthorized' } }, 401);
 
       if (req.method === 'GET' && /^\/v4\/spreadsheets\/[^/]+$/.test(url.pathname)) {

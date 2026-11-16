@@ -35,6 +35,11 @@ class SyncService {
     return this._client;
   }
 
+  // 구글 연동/시트 설정이 바뀌면 다음에 새 설정으로 클라이언트를 다시 만든다.
+  resetClient() {
+    this._client = undefined;
+  }
+
   configured() {
     try {
       return !!this.client();
@@ -62,7 +67,7 @@ class SyncService {
     if (on && !this.configured()) {
       throw httpError(
         400,
-        '구글 시트 연동이 설정되지 않았습니다. 서버의 GOOGLE_SHEET_ID / GOOGLE_SERVICE_ACCOUNT_FILE 설정을 확인해 주세요.',
+        '구글 시트 연동이 설정되지 않았습니다. 상단의 "구글 시트 연동"에서 시트 주소를 저장하고 구글 계정을 연동해 주세요.',
       );
     }
     this.store.setMeta('sync_enabled', on ? '1' : '0');

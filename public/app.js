@@ -46,6 +46,11 @@
       showLogin();
       throw new Error('로그인이 필요합니다.');
     }
+    if (res.status === 403 && data.code === 'password_change_required') {
+      if (state.me) state.me.mustChange = true;
+      openPw(true);
+      throw new Error(data.error);
+    }
     if (!res.ok) throw new Error(data.error || `요청 실패 (${res.status})`);
     return data;
   }
@@ -470,8 +475,159 @@
     if (el) wrap.scrollLeft = Math.max(0, el.offsetLeft - 188 - 8);
   }
 
+  // ---------- 구글 계정 연동 ----------
+  function renderGoogle() {
+    const g = state.google;
+    const st = $('#gStatus');
+    st.classList.remove('bad', 'ok');
+    if (!g.oauthConfigured) {
+      st.textContent = '구글 OAuth 클라이언트가 아직 설정되지 않았어요. 아래 설정을 먼저 진행해 주세요.';
+      st.classList.add('bad');
+    } else if (!g.linked) {
+      st.textContent = '아직 구글 계정이 연동되지 않았어요. "연동 신청"을 눌러 구글 계정으로 승인해 주세요.';
+    } else if (g.needsRelink) {
+      st.textContent = `연동이 끊겼어요 (${g.email || '구글 계정'}). 다시 연동 신청해 주세요.`;
+      st.classList.add('bad');
+    } else {
+      st.textContent = `연동됨: ${g.email || '구글 계정'}`;
+      st.classList.add('ok');
+    }
+    $('#gSetup').open = !g.oauthConfigured;
+    $('#gRedirect').textContent = g.redirectUri;
+    $('#gOrigin').textContent = new URL(g.redirectUri).origin;
+    $('#gLink').textContent = g.linked ? '다시 연동 신청' : '구글 계정 연동 신청';
+    $('#gLink').disabled = !g.oauthConfigured;
+    $('#gUnlink').hidden = !g.linked;
+  }
+  async function openGoogle() {
+    $('#gErr').textContent = '';
+    try {
+      state.google = await api('GET', '/api/google');
+    } catch (err) {
+      toast(err.message);
+      return;
+    }
+    const s = state.google.sheet;
+    $('#gSheetUrl').value = s.id ? `https://docs.google.com/spreadsheets/d/${s.id}` : '';
+    $('#gTab').value = s.tab;
+    renderGoogle();
+    if (!$('#googleDlg').open) $('#googleDlg').showModal();
+  }
+  async function saveSheet() {
+    const url = $('#gSheetUrl').value.trim();
+    if (!url) return; // 주소를 비워 두면 저장하지 않음
+    state.google = await api('PUT', '/api/google/sheet', { sheet: url, tab: $('#gTab').value.trim() });
+    state.sync = await api('GET', '/api/sync');
+    renderSync();
+    renderGoogle();
+  }
+  $('#googleBtn').addEventListener('click', openGoogle);
+  $('#gClose').addEventListener('click', () => $('#googleDlg').close());
+  $('#gSheetForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#gErr').textContent = '';
+    try {
+      await saveSheet();
+      toast('시트 설정을 저장했어요.');
+    } catch (err) {
+      $('#gErr').textContent = err.message;
+    }
+  });
+  // "연동 신청": 시트 주소를 저장한 뒤 구글 동의 화면으로 이동한다.
+  $('#gLink').addEventListener('click', async () => {
+    $('#gErr').textContent = '';
+    try {
+      await saveSheet();
+      const { url } = await api('POST', '/api/google/link', {});
+      location.href = url;
+    } catch (err) {
+      $('#gErr').textContent = err.message;
+    }
+  });
+  $('#gUnlink').addEventListener('click', async () => {
+    if (!confirm('구글 계정 연동을 해제할까요? 시트 동기화도 꺼집니다.')) return;
+    try {
+      state.google = await api('POST', '/api/google/unlink', {});
+      state.sync = await api('GET', '/api/sync');
+      renderSync();
+      renderGoogle();
+      toast('구글 계정 연동을 해제했어요.');
+    } catch (err) {
+      $('#gErr').textContent = err.message;
+    }
+  });
+  // 구글 동의 화면에서 돌아온 결과 (/?google=linked 등)
+  function handleGoogleReturn() {
+    const q = new URLSearchParams(location.search);
+    const r = q.get('google');
+    if (!r) return;
+    history.replaceState(null, '', location.pathname);
+    if (r === 'linked') {
+      toast('구글 계정을 연동했어요. 시트 주소를 확인하고 "시트 동기화"를 켜 주세요.');
+      openGoogle();
+    } else if (r === 'denied') {
+      toast('구글 연동이 취소되었어요.');
+    } else {
+      toast(q.get('msg') || '구글 연동에 실패했어요. 다시 시도해 주세요.');
+    }
+  }
+
+  // ---------- 비밀번호 변경 ----------
+  // forced=true: 첫 로그인 직후. 닫을 수 없고, 변경해야 보드를 볼 수 있다.
+  function openPw(forced) {
+    state.pwForced = forced;
+    const haveCurrent = !!(forced && state.loginPass);
+    $('#pwTitle').textContent = forced ? '비밀번호 설정' : '비밀번호 변경';
+    $('#pwHint').textContent = forced
+      ? '처음 로그인하셨어요. 사용할 새 비밀번호를 설정해 주세요. (8자 이상, 아이디와 다르게)'
+      : '';
+    $('#pwCancel').hidden = forced;
+    $('#pwLogout').hidden = !forced;
+    $('#pwCurRow').hidden = haveCurrent;
+    $('#pwCur').required = !haveCurrent;
+    for (const id of ['#pwCur', '#pwNew', '#pwNew2']) $(id).value = '';
+    $('#pwErr').textContent = '';
+    if (!$('#pwDlg').open) $('#pwDlg').showModal();
+    (haveCurrent ? $('#pwNew') : $('#pwCur')).focus();
+  }
+  $('#pwDlg').addEventListener('cancel', (e) => {
+    if (state.pwForced) e.preventDefault(); // 첫 비밀번호 설정 중에는 Esc 로 닫을 수 없음
+  });
+  $('#pwBtn').addEventListener('click', () => openPw(false));
+  $('#pwCancel').addEventListener('click', () => $('#pwDlg').close());
+  $('#pwLogout').addEventListener('click', () => {
+    $('#pwDlg').close();
+    $('#logout').click();
+  });
+  $('#pwForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const next = $('#pwNew').value;
+    if (next !== $('#pwNew2').value) {
+      $('#pwErr').textContent = '새 비밀번호가 서로 다릅니다.';
+      return;
+    }
+    const current = state.pwForced && state.loginPass ? state.loginPass : $('#pwCur').value;
+    try {
+      const r = await api('POST', '/api/password', { current, next });
+      const wasForced = state.pwForced;
+      state.me = r.user;
+      state.loginPass = null;
+      state.pwForced = false;
+      $('#pwDlg').close();
+      toast('비밀번호를 변경했어요.');
+      if (wasForced) {
+        await load();
+        scrollToNow();
+      }
+    } catch (err) {
+      $('#pwErr').textContent = err.message;
+    }
+  });
+
   function showLogin() {
     state.me = null;
+    state.loginPass = null;
+    if ($('#pwDlg').open) $('#pwDlg').close();
     $('#app').hidden = true;
     $('#login').hidden = false;
     $('#loginPass').value = '';
@@ -482,8 +638,14 @@
     $('#login').hidden = true;
     $('#app').hidden = false;
     $('#who').textContent = `${state.me.username} (${isAdmin() ? '관리자' : '조회'})`;
+    if (state.me.mustChange) {
+      openPw(true); // 비밀번호를 바꾸기 전에는 보드를 불러오지 않음
+      return;
+    }
+    $('#googleBtn').hidden = !isAdmin();
     await load();
     scrollToNow();
+    handleGoogleReturn();
   }
 
   $('#loginForm').addEventListener('submit', async (e) => {
@@ -492,6 +654,8 @@
     try {
       const r = await api('POST', '/api/login', { username: $('#loginUser').value, password: $('#loginPass').value });
       state.me = r.user;
+      state.loginPass = $('#loginPass').value; // 첫 비밀번호 설정 팝업에서 현재 비밀번호 재입력을 생략하기 위해 메모리에만 보관
+      $('#loginPass').value = '';
       await showApp();
     } catch (err) {
       $('#loginErr').textContent = err.message;

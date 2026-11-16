@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT UNIQUE NOT NULL,
   pass_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'viewer')),
+  must_change INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS lanes (
@@ -52,9 +53,10 @@ CREATE TABLE IF NOT EXISTS change_log (
 );
 `;
 
-function httpError(status, message) {
+function httpError(status, message, code) {
   const err = new Error(message);
   err.status = status;
+  if (code) err.code = code;
   return err;
 }
 
@@ -64,6 +66,15 @@ class Store {
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  // 이미 만들어진 DB에 새 컬럼을 추가한다.
+  migrate() {
+    const userCols = this.db.prepare('PRAGMA table_info(users)').all();
+    if (!userCols.some((c) => c.name === 'must_change')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   close() {
@@ -121,11 +132,19 @@ class Store {
   getUser(username) {
     return this.db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   }
-  createUser(username, passHash, role) {
-    this.db.prepare('INSERT INTO users(username, pass_hash, role) VALUES(?, ?, ?)').run(username, passHash, role);
+  // mustChange=true 이면 첫 로그인 후 비밀번호를 바꾸기 전까지 다른 기능을 쓸 수 없다.
+  createUser(username, passHash, role, mustChange = false) {
+    this.db
+      .prepare('INSERT INTO users(username, pass_hash, role, must_change) VALUES(?, ?, ?, ?)')
+      .run(username, passHash, role, mustChange ? 1 : 0);
   }
-  updateUser(username, passHash, role) {
-    this.db.prepare('UPDATE users SET pass_hash = ?, role = ? WHERE username = ?').run(passHash, role, username);
+  updateUser(username, passHash, role, mustChange = false) {
+    this.db
+      .prepare('UPDATE users SET pass_hash = ?, role = ?, must_change = ? WHERE username = ?')
+      .run(passHash, role, mustChange ? 1 : 0, username);
+  }
+  setPassword(username, passHash) {
+    this.db.prepare('UPDATE users SET pass_hash = ?, must_change = 0 WHERE username = ?').run(passHash, username);
   }
 
   // ---- 가져오기 / 시트 반영 ----

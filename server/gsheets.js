@@ -19,16 +19,19 @@ function colToA1(index) {
 const b64url = (buf) => Buffer.from(buf).toString('base64url');
 
 class SheetsClient {
-  constructor({ serviceAccount, sheetId, tab, apiBase, tokenUrl }) {
-    this.sa = serviceAccount;
+  // serviceAccount: 서비스 계정 키 방식, tokenProvider: 연동한 구글 계정(OAuth) 방식 — 둘 중 하나를 쓴다.
+  constructor({ serviceAccount, tokenProvider, sheetId, tab, apiBase, tokenUrl }) {
+    this.sa = serviceAccount || null;
+    this.tokenProvider = tokenProvider || null;
     this.sheetId = sheetId;
     this.tab = tab;
     this.apiBase = (apiBase || 'https://sheets.googleapis.com').replace(/\/$/, '');
-    this.tokenUrl = tokenUrl || this.sa.token_uri || 'https://oauth2.googleapis.com/token';
+    this.tokenUrl = tokenUrl || (this.sa && this.sa.token_uri) || 'https://oauth2.googleapis.com/token';
     this._token = null;
   }
 
   async accessToken() {
+    if (this.tokenProvider) return this.tokenProvider();
     const now = Math.floor(Date.now() / 1000);
     if (this._token && this._token.exp - 60 > now) return this._token.value;
     const claims = { iss: this.sa.client_email, scope: SCOPE, aud: this.tokenUrl, iat: now, exp: now + 3600 };

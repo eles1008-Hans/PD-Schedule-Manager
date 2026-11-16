@@ -22,6 +22,7 @@
     <header class="topbar">
       <h1>PD Schedule Manager</h1>
       <input id="search" class="search" type="search" placeholder="피쳐 검색" aria-label="피쳐 검색">
+      <button id="googleBtn" class="ghost" type="button">구글 시트 연동</button>
       <div class="sync" id="syncBox">
         <button id="syncSwitch" class="switch" role="switch" aria-checked="false" aria-label="구글 시트 동기화">
           <span class="knob"></span>
@@ -38,6 +39,7 @@
         <button id="goNow" class="ghost" type="button">이번 달</button>
       </div>
       <span id="who" class="who muted"></span>
+      <button id="pwBtn" class="ghost" type="button">비밀번호 변경</button>
       <button id="logout" class="ghost" type="button">로그아웃</button>
     </header>
     <main id="boardWrap" class="board-wrap" tabindex="0">
@@ -61,6 +63,52 @@
         <button type="submit" class="primary">저장</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="pwDlg" class="small">
+    <form id="pwForm" autocomplete="off">
+      <h2 id="pwTitle">비밀번호 변경</h2>
+      <p id="pwHint" class="muted"></p>
+      <label id="pwCurRow">현재 비밀번호<input id="pwCur" type="password" autocomplete="current-password"></label>
+      <label>새 비밀번호 (8자 이상)<input id="pwNew" type="password" autocomplete="new-password" minlength="8" maxlength="200" required></label>
+      <label>새 비밀번호 확인<input id="pwNew2" type="password" autocomplete="new-password" maxlength="200" required></label>
+      <p id="pwErr" class="err" role="alert"></p>
+      <div class="actions">
+        <button type="button" id="pwLogout">로그아웃</button>
+        <span class="grow"></span>
+        <button type="button" id="pwCancel">취소</button>
+        <button type="submit" class="primary">변경</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="googleDlg">
+    <h2>구글 시트 연동</h2>
+    <p id="gStatus" class="g-status"></p>
+
+    <details id="gSetup" class="g-setup">
+      <summary>처음 한 번 필요한 설정 (구글 OAuth 클라이언트)</summary>
+      <ol>
+        <li><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>에서 프로젝트를 만들고 <b>Google Sheets API</b>를 사용 설정합니다.</li>
+        <li><b>OAuth 동의 화면</b>을 설정합니다. 회사 구글 계정(Workspace)만 쓴다면 사용자 유형을 <b>내부</b>로 고르면 됩니다.</li>
+        <li><b>사용자 인증 정보 → OAuth 클라이언트 ID → 웹 애플리케이션</b>을 만들고, <b>승인된 리디렉션 URI</b>에 아래 주소를 그대로 넣습니다.<br><code id="gRedirect"></code></li>
+        <li>발급된 클라이언트 ID와 보안 비밀번호를 서버의 <code>.env</code> 파일에 <code>GOOGLE_OAUTH_CLIENT_ID</code>, <code>GOOGLE_OAUTH_CLIENT_SECRET</code>으로 넣고 서버를 다시 시작합니다.</li>
+        <li>이 앱은 위 주소와 같은 주소(<code id="gOrigin"></code>)로 접속해야 연동이 완료됩니다.</li>
+      </ol>
+    </details>
+
+    <form id="gSheetForm">
+      <label>시트 주소<input id="gSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off"></label>
+      <label>탭 이름<input id="gTab" placeholder="캐릭터 컨셉 로드맵" autocomplete="off"></label>
+      <div class="actions"><span class="grow"></span><button type="submit">시트 저장</button></div>
+    </form>
+    <p id="gErr" class="err" role="alert"></p>
+    <div class="actions">
+      <button type="button" id="gUnlink" class="danger" hidden>연동 해제</button>
+      <span class="grow"></span>
+      <button type="button" id="gClose">닫기</button>
+      <button type="button" id="gLink" class="primary">구글 계정 연동 신청</button>
+    </div>
   </dialog>
 
   <dialog id="conflictDlg">
