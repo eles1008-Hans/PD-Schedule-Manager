@@ -42,6 +42,7 @@
       <button id="pwBtn" class="ghost" type="button">비밀번호 변경</button>
       <button id="logout" class="ghost" type="button">로그아웃</button>
     </header>
+    <nav id="tabs" class="tabs" role="tablist" aria-label="로드맵 탭"></nav>
     <main id="boardWrap" class="board-wrap" tabindex="0">
       <div id="board" class="board"></div>
     </main>
@@ -99,7 +100,7 @@
 
     <form id="gSheetForm">
       <label>시트 주소<input id="gSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off"></label>
-      <label>탭 이름<input id="gTab" placeholder="캐릭터 컨셉 로드맵" autocomplete="off"></label>
+      <p class="muted g-note">시트 안의 로드맵 탭(캐릭터 컨셉 · 캐릭터 3D · 배경 컨셉 · 배경 3D · 리깅 · 월드애니 · FX)을 모두 자동으로 연결합니다.</p>
       <div class="actions"><span class="grow"></span><button type="submit">시트 저장</button></div>
     </form>
     <p id="gErr" class="err" role="alert"></p>

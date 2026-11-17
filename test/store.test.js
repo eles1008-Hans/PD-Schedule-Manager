@@ -31,7 +31,14 @@ test('파서: 담당자 블록, 그룹 승계, 같은 월 칸의 쌓인 피쳐',
     alice.features.map((f) => [f.month, f.slot, f.text]),
     [['2026-01', 0, '[MOB] a1'], ['2026-02', 0, '[MOB] a2'], ['2027-01', 0, '[PC] a3'], ['2026-01', 1, '[MOB] a1b']],
   );
-  assert.deepEqual(p.header.find((h) => h.kind === 'milestone'), { kind: 'milestone', month: '2026-01', text: '프로토 빌드' });
+  // 본문 앞의 안내 줄은 순서대로 info0, info1 … 로 이름이 붙고, 줄 제목은 titles.rows 에 담긴다
+  assert.deepEqual(p.header.find((h) => h.kind === 'info0'), { kind: 'info0', month: '2026-01', text: '프로토 빌드' });
+  assert.deepEqual(p.titles.rows, [
+    { kind: 'info0', label: '마일 스톤' },
+    { kind: 'info1', label: '컨셉 피쳐 마감' },
+  ]);
+  assert.equal(p.layout.yearRow, 1);
+  assert.equal(p.layout.bodyStartRow, 5);
 });
 
 test('파서: 월 헤더가 없으면 오류', () => {

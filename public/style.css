@@ -18,6 +18,7 @@
   --col-w: 176px;
   --year-h: 30px;
   --bar-h: 52px;
+  --tab-h: 38px;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -134,7 +135,7 @@ input, select, textarea {
 .badge.warn { color: var(--warn); border-color: var(--warn); }
 
 /* 로드맵 격자 */
-.board-wrap { height: calc(100vh - var(--bar-h)); overflow: auto; outline: none; background: var(--surface); }
+.board-wrap { height: calc(100vh - var(--bar-h) - var(--tab-h)); overflow: auto; outline: none; background: var(--surface); }
 .board {
   position: relative;
   display: grid;
@@ -165,6 +166,7 @@ input, select, textarea {
 .note-cell { padding: 4px 6px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-cell.milestone { background: var(--milestone); }
 .note-cell.deadline { background: var(--deadline); }
+.note-cell.issue { background: var(--head); }
 .band-cell { padding: 2px 6px; font-size: 11px; font-weight: 700; color: var(--accent); }
 .band-cell.dead { color: var(--danger); }
 .group {
@@ -246,3 +248,35 @@ dialog.small { width: min(360px, calc(100vw - 24px)); }
 .g-setup summary { cursor: pointer; margin-bottom: 6px; }
 .g-setup ol { padding-left: 20px; display: grid; gap: 6px; }
 .g-setup code { background: var(--head); padding: 1px 5px; border-radius: 4px; word-break: break-all; user-select: all; }
+
+/* 로드맵 탭 선택줄 */
+.tabs {
+  height: var(--tab-h);
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 10px;
+  overflow-x: auto;
+  background: var(--head);
+  border-bottom: 1px solid var(--line-strong);
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 31px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover { color: var(--text); background: var(--surface); }
+.tab.active { background: var(--surface); color: var(--text); font-weight: 600; border-color: var(--line-strong); margin-bottom: -1px; height: 32px; }
+.tab-badge { font-size: 11px; line-height: 1; padding: 2px 6px; border-radius: 9px; border: 1px solid var(--warn); color: var(--warn); }
+.g-note { margin: 0 0 10px; font-size: 12px; }

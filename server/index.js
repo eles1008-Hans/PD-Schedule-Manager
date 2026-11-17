@@ -3,9 +3,8 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Store, httpError } = require('./db');
-const { SyncService } = require('./sync');
-const { clientFromEnv } = require('./gsheets');
 const { GoogleLink } = require('./googlelink');
+const { singleBoard, openBoards } = require('./boards');
 const auth = require('./auth');
 
 const MIME = {
@@ -16,8 +15,10 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
-function createApp({ store, sync, secret, publicDir, cookieSecure = false, google }) {
-  google = google || new GoogleLink({ store, secret, env: {}, onChange: () => sync.resetClient() });
+// store: 계정/구글 연동 정보를 담는 앱 DB. boards: 로드맵 탭(보드) 목록 (없으면 store+sync 를 보드 하나로 사용)
+function createApp({ store, sync, boards, secret, publicDir, cookieSecure = false, google }) {
+  boards = boards || singleBoard(store, sync);
+  google = google || new GoogleLink({ store, secret, env: {}, onChange: () => boards.resetClients() });
   const attempts = new Map(); // 로그인 시도 제한 (IP별 5분에 10회)
 
   const send = (res, status, body, headers = {}) => {
@@ -117,53 +118,63 @@ function createApp({ store, sync, secret, publicDir, cookieSecure = false, googl
     return { body: { user: { ...ctx.user, mustChange: false } } };
   });
 
-  // ---- 화면 데이터 ----
-  route('GET', /^\/api\/board$/, {}, async () => ({ body: { ...store.board(), sync: sync.status() } }));
-  route('GET', /^\/api\/rev$/, {}, async () => ({ body: { rev: store.rev(), sync: sync.status() } }));
+  // ---- 보드(탭) 목록과 전체 동기화 ----
+  route('GET', /^\/api\/boards$/, {}, async () => ({ body: { boards: boards.summary() } }));
+  // 시트 동기화 스위치는 모든 보드를 한꺼번에 켜고 끈다. 일부만 켜지는 일이 없도록 연동 가능 여부를 먼저 확인한다.
+  route('PUT', /^\/api\/sync\/all$/, { admin: true }, async (ctx) => {
+    const on = ctx.body.enabled === true;
+    const notReady = boards.list.find((b) => !b.sync.configured());
+    if (on && notReady) notReady.sync.setEnabled(true, ctx.user.username); // 연동 미설정 오류를 그대로 전달
+    for (const b of boards.list) b.sync.setEnabled(on, ctx.user.username);
+    return { body: { boards: boards.summary() } };
+  });
+
+  // ---- 화면 데이터 (보드별: /api/boards/<id>/board 처럼 접두를 붙이면 그 보드, 없으면 첫 보드) ----
+  route('GET', /^\/api\/board$/, {}, async (ctx) => ({ body: { ...ctx.board.store.board(), sync: ctx.board.sync.status() } }));
+  route('GET', /^\/api\/rev$/, {}, async (ctx) => ({ body: { rev: ctx.board.store.rev(), sync: ctx.board.sync.status() } }));
 
   // ---- 피쳐 편집 (관리자 전용) ----
-  const afterChange = () => sync.schedule();
   route('POST', /^\/api\/features$/, { admin: true }, async (ctx) => {
     const { laneId, month, index, text } = ctx.body;
-    const r = store.createFeature({ laneId, month, index, text }, ctx.user.username);
-    afterChange();
+    const r = ctx.board.store.createFeature({ laneId, month, index, text }, ctx.user.username);
+    ctx.board.sync.schedule();
     return { status: 201, body: r };
   });
   route('PATCH', /^\/api\/features\/(\d+)$/, { admin: true }, async (ctx) => {
-    const r = store.updateFeatureText(Number(ctx.params[0]), ctx.body.text, ctx.user.username);
-    afterChange();
+    const r = ctx.board.store.updateFeatureText(Number(ctx.params[0]), ctx.body.text, ctx.user.username);
+    ctx.board.sync.schedule();
     return { body: r };
   });
   route('POST', /^\/api\/features\/(\d+)\/move$/, { admin: true }, async (ctx) => {
     const { laneId, month, index } = ctx.body;
-    const r = store.moveFeature(Number(ctx.params[0]), { laneId, month, index }, ctx.user.username);
-    afterChange();
+    const r = ctx.board.store.moveFeature(Number(ctx.params[0]), { laneId, month, index }, ctx.user.username);
+    ctx.board.sync.schedule();
     return { body: r };
   });
   route('DELETE', /^\/api\/features\/(\d+)$/, { admin: true }, async (ctx) => {
-    store.deleteFeature(Number(ctx.params[0]), ctx.user.username);
-    afterChange();
+    ctx.board.store.deleteFeature(Number(ctx.params[0]), ctx.user.username);
+    ctx.board.sync.schedule();
     return { body: { ok: true } };
   });
 
   // ---- 시트 동기화 ----
-  route('GET', /^\/api\/sync$/, {}, async () => ({ body: sync.status() }));
+  route('GET', /^\/api\/sync$/, {}, async (ctx) => ({ body: ctx.board.sync.status() }));
   route('PUT', /^\/api\/sync$/, { admin: true }, async (ctx) => {
-    sync.setEnabled(ctx.body.enabled === true, ctx.user.username);
-    return { body: sync.status() };
+    ctx.board.sync.setEnabled(ctx.body.enabled === true, ctx.user.username);
+    return { body: ctx.board.sync.status() };
   });
-  route('POST', /^\/api\/sync\/run$/, { admin: true }, async () => {
-    if (!sync.enabled()) throw httpError(400, '동기화가 꺼져 있습니다. 먼저 동기화를 켜 주세요.');
-    const result = await sync.run('manual');
-    return { body: { result, status: sync.status() } };
+  route('POST', /^\/api\/sync\/run$/, { admin: true }, async (ctx) => {
+    if (!ctx.board.sync.enabled()) throw httpError(400, '동기화가 꺼져 있습니다. 먼저 동기화를 켜 주세요.');
+    const result = await ctx.board.sync.run('manual');
+    return { body: { result, status: ctx.board.sync.status() } };
   });
   route('POST', /^\/api\/sync\/resolve$/, { admin: true }, async (ctx) => {
-    store.resolveConflict(ctx.body.laneId, ctx.body.use);
-    store.log(ctx.user.username, 'resolve_conflict', { laneId: ctx.body.laneId, use: ctx.body.use });
-    if (sync.enabled()) await sync.run('resolve');
-    return { body: sync.status() };
+    ctx.board.store.resolveConflict(ctx.body.laneId, ctx.body.use);
+    ctx.board.store.log(ctx.user.username, 'resolve_conflict', { laneId: ctx.body.laneId, use: ctx.body.use });
+    if (ctx.board.sync.enabled()) await ctx.board.sync.run('resolve');
+    return { body: ctx.board.sync.status() };
   });
-  route('GET', /^\/api\/log$/, { admin: true }, async () => ({ body: { log: store.recentLog(100) } }));
+  route('GET', /^\/api\/log$/, { admin: true }, async (ctx) => ({ body: { log: ctx.board.store.recentLog(100) } }));
 
   // ---- 구글 계정 연동 ----
   route('GET', /^\/api\/google$/, { admin: true }, async () => ({ body: google.status() }));
@@ -177,7 +188,7 @@ function createApp({ store, sync, secret, publicDir, cookieSecure = false, googl
   }));
   route('POST', /^\/api\/google\/unlink$/, { admin: true }, async (ctx) => {
     await google.unlink(ctx.user.username);
-    if (sync.enabled()) sync.setEnabled(false, ctx.user.username);
+    for (const b of boards.list) if (b.sync.enabled()) b.sync.setEnabled(false, ctx.user.username);
     return { body: google.status() };
   });
   // 구글이 승인 후 되돌려 보내는 주소. 화면(/)으로 결과를 알려 주며 돌려보낸다.
@@ -218,8 +229,18 @@ function createApp({ store, sync, secret, publicDir, cookieSecure = false, googl
       const url = new URL(req.url, 'http://x');
       if (!url.pathname.startsWith('/api/')) return serveStatic(req, res);
 
-      const r = routes.find((x) => x.method === req.method && x.pattern.test(url.pathname));
+      // /api/boards/<id>/xxx  →  보드 <id> 의 /api/xxx
+      let pathname = url.pathname;
+      let boardId = null;
+      const bm = pathname.match(/^\/api\/boards\/([^/]+)(\/.+)$/);
+      if (bm) {
+        boardId = decodeURIComponent(bm[1]);
+        pathname = `/api${bm[2]}`;
+      }
+      const r = routes.find((x) => x.method === req.method && x.pattern.test(pathname));
       if (!r) throw httpError(404, '존재하지 않는 API입니다.');
+      const board = boardId ? boards.get(boardId) : boards.default;
+      if (!board) throw httpError(404, '존재하지 않는 보드입니다.');
 
       const mutating = req.method !== 'GET';
       if (mutating) {
@@ -244,7 +265,7 @@ function createApp({ store, sync, secret, publicDir, cookieSecure = false, googl
       if (r.opts.admin && user.role !== 'admin') throw httpError(403, '관리자만 변경할 수 있습니다.');
 
       const body = mutating ? await readJson(req) : {};
-      const out = await r.handler({ req, res, user, body, params: url.pathname.match(r.pattern).slice(1) });
+      const out = await r.handler({ req, res, user, board, body, params: pathname.match(r.pattern).slice(1) });
       send(res, out.status || 200, out.body, out.headers);
     } catch (err) {
       const status = err.status || 500;
@@ -276,18 +297,15 @@ function main() {
   }
 
   const secret = auth.loadSecret(dataDir);
-  let sync;
+  let boards;
   // 연동한 구글 계정(OAuth)이 있으면 그것을, 없으면 서비스 계정 키(환경 변수)를 쓴다.
-  const google = new GoogleLink({ store, secret, onChange: () => sync && sync.resetClient() });
-  sync = new SyncService(store, {
-    clientFactory: () => google.client() || clientFromEnv(),
-    intervalMs: Number(process.env.SYNC_INTERVAL_SEC || 30) * 1000,
-  });
-  sync.start();
+  const google = new GoogleLink({ store, secret, onChange: () => boards && boards.resetClients() });
+  boards = openBoards({ dataDir, appStore: store, google });
+  boards.start(Number(process.env.SYNC_INTERVAL_SEC || 30) * 1000);
 
   const app = createApp({
     store,
-    sync,
+    boards,
     google,
     secret,
     publicDir: path.resolve(__dirname, '..', 'public'),

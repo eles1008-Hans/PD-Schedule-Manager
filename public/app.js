@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { me: null, board: null, sync: null, rev: 0, dragging: null, query: '', colW: 176, editing: null };
+  const state = { me: null, boards: [], boardId: null, board: null, sync: null, rev: 0, dragging: null, query: '', colW: 176, editing: null };
 
   try {
     const saved = Number(localStorage.getItem('pdsm.colW'));
@@ -24,6 +24,10 @@
     for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid);
     return el;
   }
+
+  // 현재 보드(탭)의 API 주소: /api/boards/<id>/...
+  const B = (path) => `/api/boards/${encodeURIComponent(state.boardId)}${path}`;
+  const LAST_TAB_KEY = 'pdsm.board';
 
   let toastTimer = null;
   function toast(msg) {
@@ -147,8 +151,16 @@
       });
     };
     infoRow('band', '구간', '');
-    infoRow('milestone', (b.titles.milestone || '마일스톤').split('\n')[0], 'milestone');
-    infoRow('deadline', (b.titles.deadline || '마감').split('\n')[0], 'deadline');
+    // 본문 앞의 안내 줄(마일 스톤, 이슈 정리, 피쳐 마감 …)은 탭마다 이름과 개수가 다르다
+    const infoRows = b.titles.rows || [
+      { kind: 'milestone', label: b.titles.milestone || '마일스톤' },
+      { kind: 'deadline', label: b.titles.deadline || '마감' },
+    ];
+    for (const r of infoRows) {
+      const label = r.label || '';
+      const cls = /마감/.test(label) ? 'deadline' : /마일/.test(label) ? 'milestone' : 'issue';
+      infoRow(r.kind, label.split('\n')[0] || '안내', cls);
+    }
 
     // 담당자(행)
     let prevGroup = null;
@@ -288,7 +300,7 @@
     clearDrop();
     if (id == null) return;
     try {
-      await api('POST', `/api/features/${id}/move`, { laneId: Number(cell.dataset.lane), month: cell.dataset.month, index });
+      await api('POST', B(`/features/${id}/move`), { laneId: Number(cell.dataset.lane), month: cell.dataset.month, index });
     } catch (err) {
       toast(err.message);
     }
@@ -337,12 +349,12 @@
     const month = $('#editMonth').value;
     try {
       if (state.editing == null) {
-        await api('POST', '/api/features', { laneId, month, text });
+        await api('POST', B('/features'), { laneId, month, text });
       } else {
         const f = findFeature(state.editing);
-        if (f && f.text !== text) await api('PATCH', `/api/features/${state.editing}`, { text });
+        if (f && f.text !== text) await api('PATCH', B(`/features/${state.editing}`), { text });
         if (f && (f.laneId !== laneId || f.month !== month)) {
-          await api('POST', `/api/features/${state.editing}/move`, { laneId, month });
+          await api('POST', B(`/features/${state.editing}/move`), { laneId, month });
         }
       }
       $('#editDlg').close();
@@ -354,7 +366,7 @@
   $('#editDelete').addEventListener('click', async () => {
     if (state.editing == null || !confirm('이 피쳐를 삭제할까요?')) return;
     try {
-      await api('DELETE', `/api/features/${state.editing}`);
+      await api('DELETE', B(`/features/${state.editing}`));
       $('#editDlg').close();
       await load();
     } catch (err) {
@@ -411,7 +423,11 @@
 
   $('#syncSwitch').addEventListener('click', async () => {
     try {
-      state.sync = await api('PUT', '/api/sync', { enabled: !state.sync.enabled });
+      // 스위치는 모든 탭의 동기화를 한꺼번에 켜고 끈다
+      const r = await api('PUT', '/api/sync/all', { enabled: !state.sync.enabled });
+      state.boards = r.boards;
+      state.sync = await api('GET', B('/sync'));
+      renderTabs();
       renderSync();
       await load();
     } catch (err) {
@@ -420,7 +436,7 @@
   });
   $('#syncNow').addEventListener('click', async () => {
     try {
-      const { result, status } = await api('POST', '/api/sync/run', {});
+      const { result, status } = await api('POST', B('/sync/run'), {});
       state.sync = status;
       if (result.error) toast(`동기화 오류: ${result.error}`);
       await load();
@@ -447,7 +463,7 @@
   async function resolve(laneId, use) {
     if (use === 'sheet' && !confirm('앱에서 바꾼 이 담당자의 미반영 변경이 사라집니다. 시트 내용을 사용할까요?')) return;
     try {
-      state.sync = await api('POST', '/api/sync/resolve', { laneId, use });
+      state.sync = await api('POST', B('/sync/resolve'), { laneId, use });
       await load();
       if (!state.sync.conflicts.length) $('#conflictDlg').close();
       else $('#conflictBtn').click();
@@ -458,7 +474,7 @@
 
   // ---------- 불러오기 / 로그인 ----------
   async function load() {
-    const data = await api('GET', '/api/board');
+    const data = await api('GET', B('/board'));
     state.board = data;
     state.sync = data.sync;
     state.rev = data.rev;
@@ -509,15 +525,14 @@
     }
     const s = state.google.sheet;
     $('#gSheetUrl').value = s.id ? `https://docs.google.com/spreadsheets/d/${s.id}` : '';
-    $('#gTab').value = s.tab;
     renderGoogle();
     if (!$('#googleDlg').open) $('#googleDlg').showModal();
   }
   async function saveSheet() {
     const url = $('#gSheetUrl').value.trim();
     if (!url) return; // 주소를 비워 두면 저장하지 않음
-    state.google = await api('PUT', '/api/google/sheet', { sheet: url, tab: $('#gTab').value.trim() });
-    state.sync = await api('GET', '/api/sync');
+    state.google = await api('PUT', '/api/google/sheet', { sheet: url });
+    state.sync = await api('GET', B('/sync'));
     renderSync();
     renderGoogle();
   }
@@ -548,7 +563,7 @@
     if (!confirm('구글 계정 연동을 해제할까요? 시트 동기화도 꺼집니다.')) return;
     try {
       state.google = await api('POST', '/api/google/unlink', {});
-      state.sync = await api('GET', '/api/sync');
+      state.sync = await api('GET', B('/sync'));
       renderSync();
       renderGoogle();
       toast('구글 계정 연동을 해제했어요.');
@@ -569,6 +584,59 @@
       toast('구글 연동이 취소되었어요.');
     } else {
       toast(q.get('msg') || '구글 연동에 실패했어요. 다시 시도해 주세요.');
+    }
+  }
+
+  // ---------- 탭(보드) ----------
+  function renderTabs() {
+    $('#tabs').replaceChildren(
+      ...state.boards.map((b) => {
+        const active = b.id === state.boardId;
+        const issue = b.sync.conflicts ? `충돌 ${b.sync.conflicts}` : b.sync.error ? '오류' : '';
+        return h(
+          'button',
+          {
+            type: 'button',
+            role: 'tab',
+            class: `tab${active ? ' active' : ''}`,
+            'aria-selected': String(active),
+            title: b.sync.error || b.tab,
+            onclick: () => switchBoard(b.id),
+          },
+          h('span', { text: b.title }),
+          issue ? h('span', { class: 'tab-badge', text: issue }) : null,
+        );
+      }),
+    );
+  }
+  async function loadBoards() {
+    state.boards = (await api('GET', '/api/boards')).boards;
+    if (!state.boards.some((b) => b.id === state.boardId)) {
+      let saved = null;
+      try {
+        saved = localStorage.getItem(LAST_TAB_KEY);
+      } catch {
+        /* 저장소를 쓸 수 없으면 첫 탭 */
+      }
+      state.boardId = state.boards.some((b) => b.id === saved) ? saved : state.boards[0].id;
+    }
+    renderTabs();
+  }
+  async function switchBoard(id) {
+    if (id === state.boardId) return;
+    state.boardId = id;
+    state.board = null;
+    try {
+      localStorage.setItem(LAST_TAB_KEY, id);
+    } catch {
+      /* 무시 */
+    }
+    renderTabs();
+    try {
+      await load();
+      scrollToNow();
+    } catch (err) {
+      toast(err.message);
     }
   }
 
@@ -616,6 +684,7 @@
       $('#pwDlg').close();
       toast('비밀번호를 변경했어요.');
       if (wasForced) {
+        await loadBoards();
         await load();
         scrollToNow();
       }
@@ -643,6 +712,7 @@
       return;
     }
     $('#googleBtn').hidden = !isAdmin();
+    await loadBoards();
     await load();
     scrollToNow();
     handleGoogleReturn();
@@ -689,10 +759,12 @@
 
   // 다른 관리자가 바꾼 내용을 5초마다 확인
   setInterval(async () => {
-    if (!state.me || document.hidden || state.dragging != null || dialogOpen()) return;
+    if (!state.me || !state.boardId || document.hidden || state.dragging != null || dialogOpen()) return;
     try {
-      const r = await api('GET', '/api/rev');
+      const r = await api('GET', B('/rev'));
       state.sync = r.sync;
+      state.boards = (await api('GET', '/api/boards')).boards; // 다른 탭의 충돌/오류 배지도 갱신
+      renderTabs();
       if (r.rev !== state.rev) await load();
       else renderSync();
     } catch {

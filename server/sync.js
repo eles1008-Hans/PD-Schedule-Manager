@@ -86,14 +86,19 @@ class SyncService {
     this._debounce.unref();
   }
 
-  start() {
-    this._timer = setInterval(() => {
-      if (this.enabled() && !this.running) this.run('interval').catch(() => {});
-    }, this.intervalMs);
-    this._timer.unref();
+  // offsetMs: 여러 보드가 같은 순간에 구글을 호출하지 않도록 시작 시점을 늦춘다.
+  start(offsetMs = 0) {
+    this._startTimer = setTimeout(() => {
+      this._timer = setInterval(() => {
+        if (this.enabled() && !this.running) this.run('interval').catch(() => {});
+      }, this.intervalMs);
+      this._timer.unref();
+    }, offsetMs);
+    this._startTimer.unref();
   }
 
   stop() {
+    clearTimeout(this._startTimer);
     clearInterval(this._timer);
     clearTimeout(this._debounce);
   }
@@ -123,9 +128,9 @@ class SyncService {
   }
 
   async pull(client) {
-    const meta = await client.getMeta();
-    const grid = await client.readGrid(meta);
-    const parsed = parseGrid(grid, this.store.getJson('layout', {}));
+    // 위치는 매번 시트를 보고 다시 찾는다. (직접 지정한 값은 layout_override 에만 저장)
+    const grid = await client.readGrid();
+    const parsed = parseGrid(grid, this.store.getJson('layout_override', {}));
     parsed.rowCount = Math.max(parsed.rowCount, 0);
     return this.store.applySheet(parsed);
   }

@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 
 const SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const MAX_READ_COLS = 104; // A ~ CZ
 
 // 0 -> A, 25 -> Z, 26 -> AA
 function colToA1(index) {
@@ -88,12 +89,23 @@ class SheetsClient {
     return { gid: p.sheetId, rowCount: p.gridProperties.rowCount, colCount: p.gridProperties.columnCount };
   }
 
+  // 탭 전체를 한 번의 호출로 읽는다. (meta 를 주면 그 크기까지만 읽음)
   async readGrid(meta) {
-    const range = this.a1(0, 0, meta.colCount - 1, meta.rowCount - 1);
-    const data = await this.request(
-      'GET',
-      `/v4/spreadsheets/${encodeURIComponent(this.sheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`,
-    );
+    const range = meta
+      ? this.a1(0, 0, meta.colCount - 1, meta.rowCount - 1)
+      : `${this.quotedTab()}!A:${colToA1(MAX_READ_COLS - 1)}`;
+    let data;
+    try {
+      data = await this.request(
+        'GET',
+        `/v4/spreadsheets/${encodeURIComponent(this.sheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`,
+      );
+    } catch (err) {
+      if (/Unable to parse range/i.test(err.message)) {
+        throw new Error(`시트에서 '${this.tab}' 탭을 찾을 수 없습니다. 탭 이름을 확인해 주세요.`);
+      }
+      throw err;
+    }
     return data.values || [];
   }
 
@@ -126,7 +138,8 @@ class SheetsClient {
 }
 
 // 환경 변수에서 시트 연동 설정을 읽는다. 하나라도 빠지면 null (연동 미설정).
-function clientFromEnv(env = process.env) {
+// tab 을 주면 환경 변수의 탭 이름 대신 그 탭을 쓴다. (보드마다 탭이 다름)
+function clientFromEnv(env = process.env, tab) {
   const sheetId = (env.GOOGLE_SHEET_ID || '').trim();
   if (!sheetId) return null;
   let raw = env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -139,7 +152,7 @@ function clientFromEnv(env = process.env) {
   return new SheetsClient({
     serviceAccount,
     sheetId,
-    tab: (env.GOOGLE_SHEET_TAB || '캐릭터 컨셉 로드맵').trim(),
+    tab: (tab || env.GOOGLE_SHEET_TAB || '캐릭터 컨셉 로드맵').trim(),
     apiBase: env.GOOGLE_SHEETS_API_BASE,
     tokenUrl: env.GOOGLE_OAUTH_TOKEN_URL,
   });

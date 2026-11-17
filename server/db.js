@@ -63,6 +63,7 @@ function httpError(status, message, code) {
 class Store {
   constructor(file) {
     if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
+    this.file = file;
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
@@ -246,9 +247,11 @@ class Store {
       if (!byLane.has(f.lane_id)) byLane.set(f.lane_id, []);
       byLane.get(f.lane_id).push({ id: f.id, month: f.month, slot: f.slot, text: f.text });
     }
-    const header = { band: {}, milestone: {}, deadline: {} };
+    // 헤더 줄 종류(band, info0, info1 …)는 탭마다 다르다. 예전 DB의 milestone/deadline 도 그대로 내보낸다.
+    const header = { band: {} };
     for (const h of this.db.prepare('SELECT kind, month, text FROM header_cells').all()) {
-      if (header[h.kind]) header[h.kind][h.month] = h.text;
+      if (!header[h.kind]) header[h.kind] = {};
+      header[h.kind][h.month] = h.text;
     }
     return {
       rev: this.rev(),

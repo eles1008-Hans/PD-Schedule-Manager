@@ -229,11 +229,17 @@ class GoogleLink {
   }
 
   // 연동되어 있고 시트가 지정되어 있으면 시트 클라이언트를, 아니면 null
-  client() {
+  // tab 을 주면 그 탭용 클라이언트 (보드마다 탭이 다르다), 없으면 저장된 기본 탭
+  client({ tab } = {}) {
     if (!this.oauthConfigured() || !this.link()) return null;
-    const { id, tab } = this.sheet();
-    if (!id) return null;
-    return new SheetsClient({ tokenProvider: () => this.accessToken(), sheetId: id, tab, apiBase: this.apiBase });
+    const sheet = this.sheet();
+    if (!sheet.id) return null;
+    return new SheetsClient({
+      tokenProvider: () => this.accessToken(),
+      sheetId: sheet.id,
+      tab: tab || sheet.tab,
+      apiBase: this.apiBase,
+    });
   }
 }
 

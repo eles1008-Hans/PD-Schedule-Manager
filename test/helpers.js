@@ -62,6 +62,10 @@ async function startMockSheets(grid, { title = 'Roadmap', gid = 42, colCount = 1
         });
       }
       if (req.method === 'GET' && url.pathname.includes('/values/')) {
+        // 실제 구글처럼, 없는 탭을 읽으면 400 오류
+        const range = decodeURIComponent(url.pathname.split('/values/')[1]);
+        const tab = (range.match(/^'(.+)'!/) || [])[1];
+        if (tab !== state.title) return reply({ error: { message: `Unable to parse range: ${range}` } }, 400);
         const values = [];
         for (let r = 0; r < state.rowCount; r++) {
           const row = state.grid[r] ? [...state.grid[r]] : [];
